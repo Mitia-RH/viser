@@ -34,6 +34,7 @@ from ._messages import (
     GuiCloseModalMessage,
     GuiDropdownProps,
     GuiFolderProps,
+    GuiFolderTreeProps,
     GuiHtmlProps,
     GuiImageProps,
     GuiMarkdownProps,
@@ -634,6 +635,80 @@ class GuiFolderHandle(_GuiHandle, GuiFolderProps):
 
     def remove(self) -> None:
         """Permanently remove this folder and all contained GUI elements from the
+        visualizer."""
+        # Warn if already removed.
+        if self._impl.removed:
+            warnings.warn(
+                f"Attempted to remove an already removed {self.__class__.__name__}.",
+                stacklevel=2,
+            )
+            return
+        self._impl.removed = True
+
+        # Remove children, then self.
+        gui_api = self._impl.gui_api
+        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
+            # Don't send outdated GUI updates to new clients.
+            lambda message: isinstance(message, GuiUpdateMessage)
+            and message.uuid == self._impl.uuid
+        )
+        gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
+        for child in tuple(self._children.values()):
+            child.remove()
+        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
+        parent._children.pop(self._impl.uuid)
+        gui_api._container_handle_from_uuid.pop(self._impl.uuid)
+
+
+class GuiFolderTreeHandle(_GuiInputHandle[bool], GuiFolderTreeProps):
+    """Use as a context to place GUI elements into a hierarchical folder tree with visibility controls."""
+
+    def __init__(self, _impl: _GuiHandleState[bool]) -> None:
+        super().__init__(_impl=_impl)
+        self._impl.gui_api._container_handle_from_uuid[self._impl.uuid] = self
+
+        # Get the visibility state from props, or default to True
+        visibility_state = getattr(self._impl.props, "visibility_state", True)
+        # Ensure the visibility_state is set in props
+        setattr(self._impl.props, "visibility_state", visibility_state)
+
+        self._children = {}
+        parent = self._impl.gui_api._container_handle_from_uuid[
+            self._impl.parent_container_id
+        ]
+        parent._children[self._impl.uuid] = self
+
+    def __enter__(self) -> GuiFolderTreeHandle:
+        self._container_id_restore = self._impl.gui_api._get_container_uuid()
+        self._impl.gui_api._set_container_uuid(self._impl.uuid)
+        return self
+
+    def __exit__(self, *args) -> None:
+        del args
+        assert self._container_id_restore is not None
+        self._impl.gui_api._set_container_uuid(self._container_id_restore)
+        self._container_id_restore = None
+
+    def set_visibility_state(self, visible: bool) -> None:
+        """Set the visibility state of all children in the folder tree.
+
+        Args:
+            visible: If True, all children will be visible. If False, they will be hidden.
+        """
+        from . import _messages
+
+        assert isinstance(self._impl.props, GuiFolderTreeProps)
+        self._impl.props.visibility_state = visible
+
+        self._impl.gui_api._websock_interface.queue_message(
+            _messages.GuiUpdateMessage(
+                uuid=self._impl.uuid,
+                updates={"visibility_state": visible},
+            )
+        )
+
+    def remove(self) -> None:
+        """Permanently remove this folder tree and all contained GUI elements from the
         visualizer."""
         # Warn if already removed.
         if self._impl.removed:

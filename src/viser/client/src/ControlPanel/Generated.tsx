@@ -20,6 +20,7 @@ import PlotlyComponent from "../components/PlotlyComponent";
 import UplotComponent from "../components/UplotComponent";
 import TabGroupComponent from "../components/TabGroup";
 import FolderComponent from "../components/Folder";
+import FolderTreeComponent from "../components/FolderTree";
 import MultiSliderComponent from "../components/MultiSlider";
 import UploadButtonComponent from "../components/UploadButton";
 import ProgressBarComponent from "../components/ProgressBar";
@@ -106,6 +107,8 @@ function GeneratedInput(props: {
   switch (conf.type) {
     case "GuiFolderMessage":
       return <FolderComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
+    case "GuiFolderTreeMessage":
+      return <FolderTreeComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
     case "GuiTabGroupMessage":
       return <TabGroupComponent {...conf} />;
     case "GuiMarkdownMessage":

@@ -1017,6 +1017,26 @@ class GuiFolderMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
+class GuiFolderTreeProps:
+    order: float
+    """Order value for arranging GUI elements. Synchronized automatically when assigned."""
+    label: str
+    """Label text for the GUI folder tree. Synchronized automatically when assigned."""
+    visible: bool
+    """Visibility state of the GUI folder tree. Synchronized automatically when assigned."""
+    expand_by_default: bool
+    """Whether the folder tree should be expanded by default. Synchronized automatically when assigned."""
+    visibility_state: bool
+    """Visibility state of the item represented by the folder tree and the items inside the folder tree."""
+
+
+@dataclasses.dataclass
+class GuiFolderTreeMessage(_CreateGuiComponentMessage):
+    container_uuid: str
+    props: GuiFolderTreeProps
+
+
+@dataclasses.dataclass
 class GuiMarkdownProps:
     order: float
     """Order value for arranging GUI elements. Synchronized automatically when assigned."""

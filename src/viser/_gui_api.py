@@ -41,6 +41,7 @@ from ._gui_handles import (
     GuiDropdownHandle,
     GuiEvent,
     GuiFolderHandle,
+    GuiFolderTreeHandle,
     GuiHtmlHandle,
     GuiImageHandle,
     GuiMarkdownHandle,
@@ -517,6 +518,54 @@ class GuiApi:
                 folder_container_id,
                 self,
                 None,
+                props=props,
+                parent_container_id=self._get_container_uuid(),
+            )
+        )
+
+    def add_folder_tree(
+        self,
+        label: str,
+        *,
+        order: float | None = None,
+        expand_by_default: bool = True,
+        visible: bool = True,
+        visibility_state: bool = True,
+    ) -> GuiFolderTreeHandle:
+        """Add a hierarchical folder tree with visibility controls, and return a handle that can be used to populate it.
+
+        Args:
+            label: Label to display on the folder tree.
+            order: Optional ordering, smallest values will be displayed first.
+            expand_by_default: Open the folder tree by default. Set to False to collapse it by
+                default.
+            visible: Whether the component is visible.
+            visibility_state: Initial visibility state of the folder tree contents.
+
+        Returns:
+            A handle that can be used as a context to populate the folder tree.
+        """
+        folder_tree_container_id = _make_uuid()
+        order = _apply_default_order(order)
+        props = _messages.GuiFolderTreeProps(
+            order=order,
+            label=label,
+            expand_by_default=expand_by_default,
+            visible=visible,
+            visibility_state=visibility_state,
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiFolderTreeMessage(
+                uuid=folder_tree_container_id,
+                container_uuid=self._get_container_uuid(),
+                props=props,
+            )
+        )
+        return GuiFolderTreeHandle(
+            _GuiHandleState(
+                folder_tree_container_id,
+                self,
+                visibility_state,
                 props=props,
                 parent_container_id=self._get_container_uuid(),
             )

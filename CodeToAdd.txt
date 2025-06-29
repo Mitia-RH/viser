@@ -1,0 +1,423 @@
+🔧 Refactored Copilot Agent Prompt:
+Project: I’m extending viser (from nerfstudio) by adding a new component called FolderTree.
+
+Goal: It behaves like the existing folder component but adds:
+
+An eye icon button to toggle visibility_state for itself and recursively for its children.
+
+If a child is another FolderTree, it should call the same visibility toggle logic.
+
+If a child is a component, it should toggle either visible or disabled based on its available props.
+
+A second button for "Properties" (just toggling a local state to show a placeholder for now).
+
+Places involved:
+
+#_gui_api.py: added a add_folder_tree method.
+
+#_gui_handles.py: added GuiFolderTreeHandle class with a set_visibility_state method.
+
+#WebsocketMessages.ts: added GuiFolderTreeMessage interface.
+
+#_messages.py: added GuiFolderTreeProps and message class.
+
+#FolderTree.tsx: built a FolderTreeComponent React component using Mantine.
+
+Where I need help:
+I want you to help me polish and improve the recursive visibility toggling logic inside the updateChildrenVisibility function in FolderTree.tsx, making sure it correctly handles:
+
+Nested FolderTree
+
+Components with either disabled or visible props
+
+Proper messaging via GuiUpdateMessage
+
+(If helpful, here's a snippet of the current updateChildrenVisibility implementation:)
+
+inside #_gui_handles.py
+
+
+class GuiFolderTreeHandle(_GuiHandle, GuiFolderTreeProps):
+    """Use as a context to place GUI elements into a hierarchical folder tree with visibility controls."""
+
+    def __init__(self, _impl: _GuiHandleState[None]) -> None:
+        super().__init__(_impl=_impl)
+        self._impl.gui_api._container_handle_from_uuid[self._impl.uuid] = self
+        self._impl.gui_api._gui_input_handle_from_uuid[self._impl.uuid] = self
+
+        self._impl.visibility_state = getattr(
+            self._impl.props, "visibility_state", True
+        )
+
+        self._children = {}
+        parent = self._impl.gui_api._container_handle_from_uuid[
+            self._impl.parent_container_id
+        ]
+        parent._children[self._impl.uuid] = self
+
+    def __enter__(self) -> GuiFolderTreeHandle:
+        self._container_id_restore = self._impl.gui_api._get_container_uuid()
+        self._impl.gui_api._set_container_uuid(self._impl.uuid)
+        return self
+
+    def __exit__(self, *args) -> None:
+        del args
+        assert self._container_id_restore is not None
+        self._impl.gui_api._set_container_uuid(self._container_id_restore)
+        self._container_id_restore = None
+
+    def set_visibility_state(self, visible: bool) -> None:
+        """Set the visibility state of all children in the folder tree.
+
+        Args:
+            visible: If True, all children will be visible. If False, they will be hidden.
+        """
+        from . import _messages
+
+        assert isinstance(self._impl.props, GuiFolderTreeProps)
+        self._impl.props.visibility_state = visible
+
+        self._impl.gui_api._websock_interface.queue_message(
+            _messages.GuiUpdateMessage(
+                uuid=self._impl.uuid,
+                updates={"visibility_state": visible},
+            )
+        )
+
+    def remove(self) -> None:
+        """Permanently remove this folder and all contained GUI elements from the
+        visualizer."""
+        # Warn if already removed.
+        if self._impl.removed:
+            warnings.warn(
+                f"Attempted to remove an already removed {self.__class__.__name__}.",
+                stacklevel=2,
+            )
+            return
+        self._impl.removed = True
+
+        # Remove children, then self.
+        gui_api = self._impl.gui_api
+        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
+            # Don't send outdated GUI updates to new clients.
+            lambda message: isinstance(message, GuiUpdateMessage)
+            and message.uuid == self._impl.uuid
+        )
+        gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
+        for child in tuple(self._children.values()):
+            child.remove()
+        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
+        parent._children.pop(self._impl.uuid)
+        gui_api._container_handle_from_uuid.pop(self._impl.uuid)
+
+inside #WebsocketMessages.ts
+
+
+
+
+
+export interface GuiFolderTreeMessage {
+  type: "GuiFolderTreeMessage";
+  uuid: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    label: string;
+    visible: boolean;
+    expand_by_default: boolean;
+    visibility_state: boolean;
+  };
+}
+
+#_messages.py
+
+
+
+
+@dataclasses.dataclass
+class GuiFolderTreeProps:
+    order: float
+    """Order value for arranging GUI elements. Synchronized automatically when assigned."""
+    label: str
+    """Label text for the GUI folder. Synchronized automatically when assigned."""
+    visible: bool
+    """Visibility state of the GUI folder. Synchronized automatically when assigned."""
+    expand_by_default: bool
+    """Whether the folder should be expanded by default. Synchronized automatically when assigned."""
+    visibility_state: bool
+    """Visibility state of the item represented by the folder and the items inside the folder."""
+
+
+@dataclasses.dataclass
+class GuiFolderTreeMessage(_CreateGuiComponentMessage):
+    container_uuid: str
+    props: GuiFolderTreeProps
+
+#FolderTree.tsx
+
+
+
+
+
+import * as React from "react";
+import { useDisclosure } from "@mantine/hooks";
+import { GuiFolderTreeMessage } from "../WebsocketMessages";
+import { IconChevronDown, IconChevronUp, IconEye, IconEyeOff, IconSettings } from "@tabler/icons-react";
+import { Box, Collapse, Paper, ActionIcon, Group } from "@mantine/core";
+import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
+import { ViewerContext } from "../ViewerContext";
+import { folderLabel, folderToggleIcon, folderWrapper } from "./Folder.css";
+
+/**
+ * Component styles for FolderTree
+ */
+export const folderTreeEyeButton = {
+  height: "1.25rem",
+  width: "1.25rem",
+  marginLeft: "auto",
+  marginRight: "0.25rem",
+};
+
+export const folderTreePropertiesButton = {
+  height: "1.25rem",
+  width: "1.25rem",
+  marginRight: "0.25rem",
+};
+
+/**
+ * FolderTree component that provides a hierarchical structure with visibility toggles
+ */
+export default function FolderTreeComponent({
+  uuid,
+  props: { label, visible, expand_by_default, visibility_state },
+}: GuiFolderTreeMessage) {
+  const viewer = React.useContext(ViewerContext)!;
+  const [opened, { toggle }] = useDisclosure(expand_by_default);
+  const [isVisible, setIsVisible] = React.useState(visibility_state);
+  const [showProperties, setShowProperties] = React.useState(false);
+  
+  const guiIdSet = viewer.useGui(
+    (state) => state.guiUuidSetFromContainerUuid[uuid],
+  );
+  const guiContext = React.useContext(GuiComponentContext)!;
+  const isEmpty = guiIdSet === undefined || Object.keys(guiIdSet).length === 0;
+
+  const toggleVisibility = React.useCallback(() => {
+    const newVisibilityState = !isVisible;
+    setIsVisible(newVisibilityState);
+    
+    // Update this folder tree's visibility state
+    guiContext.messageSender({
+      type: "GuiUpdateMessage",
+      uuid: uuid,
+      updates: { visibility_state: newVisibilityState },
+    });
+    
+    if (guiIdSet) {
+      updateChildrenVisibility(guiIdSet, newVisibilityState);
+    }
+  }, [isVisible, uuid, guiIdSet, guiContext]);
+
+  const updateChildrenVisibility = React.useCallback((idSet: Record<string, boolean>, newState: boolean) => {
+    Object.keys(idSet).forEach(childId => {
+      const childConfig = viewer.useGui.getState().guiConfigFromUuid[childId];
+      
+      if (!childConfig) return;
+      
+      // Check current props to see what properties are available
+      const currentProps = childConfig.props;
+      
+      // Handle different component types with appropriate properties
+      switch (childConfig.type) {
+        case "GuiFolderTreeMessage": {
+          // For folder trees, update visibility_state
+          guiContext.messageSender({
+            type: "GuiUpdateMessage",
+            uuid: childId,
+            updates: { visibility_state: newState },
+          });
+          
+          // Recursively update nested folder trees
+          const childIdSet = viewer.useGui.getState().guiUuidSetFromContainerUuid[childId];
+          if (childIdSet) {
+            updateChildrenVisibility(childIdSet, newState);
+          }
+          break;
+        }
+        case "GuiFolderMessage":
+        case "GuiTabGroupMessage":
+        case "GuiButtonMessage":
+        case "GuiSliderMessage":
+        case "GuiNumberMessage":
+        case "GuiTextMessage":
+        case "GuiCheckboxMessage":
+        case "GuiDropdownMessage":
+        case "GuiButtonGroupMessage":
+        case "GuiVector2Message":
+        case "GuiVector3Message":
+        case "GuiRgbMessage":
+        case "GuiRgbaMessage": {
+          // For input components, only update disabled if it exists in props
+          if ('disabled' in currentProps) {
+            guiContext.messageSender({
+              type: "GuiUpdateMessage",
+              uuid: childId,
+              updates: { disabled: !newState },
+            });
+          } else {
+            console.warn(Component ${childId} of type ${childConfig.type} doesn't have disabled property);
+          }
+          break;
+        }
+        default: {
+          // For unknown components, try visible first, then disabled
+          if ('visible' in currentProps) {
+            guiContext.messageSender({
+              type: "GuiUpdateMessage",
+              uuid: childId,
+              updates: { visible: newState },
+            });
+          } else if ('disabled' in currentProps) {
+            guiContext.messageSender({
+              type: "GuiUpdateMessage",
+              uuid: childId,
+              updates: { disabled: !newState },
+            });
+          } else {
+            console.warn(Component ${childId} of type ${childConfig.type} has no visible or disabled property);
+          }
+          break;
+        }
+      }
+    });
+  }, [guiContext, viewer]);
+
+  const toggleProperties = React.useCallback(() => {
+    setShowProperties(!showProperties);
+  }, [showProperties]);
+
+  const ToggleIcon = opened ? IconChevronUp : IconChevronDown;
+  const VisibilityIcon = isVisible ? IconEye : IconEyeOff;
+
+  if (!visible) return null;
+  
+  return (
+    <Paper
+      withBorder
+      className={folderWrapper}
+    >
+      <Paper className={folderLabel} style={{ cursor: isEmpty ? undefined : "pointer" }}>
+        <Group spacing="xs" style={{ width: "100%" }} position="apart">
+          <Box onClick={toggle} style={{ flexGrow: 1, cursor: "pointer" }}>
+            {label}
+          </Box>
+          
+          <Group spacing="xs">
+            <ActionIcon 
+              size="sm" 
+              style={folderTreeEyeButton}
+              onClick={toggleVisibility}
+              aria-label={isVisible ? "Hide contents" : "Show contents"}
+            >
+              <VisibilityIcon size="1rem" />
+            </ActionIcon>
+            
+            <ActionIcon 
+              size="sm" 
+              style={folderTreePropertiesButton}
+              onClick={toggleProperties}
+              aria-label="Properties"
+            >
+              <IconSettings size="1rem" />
+            </ActionIcon>
+            
+            {!isEmpty && (
+              <ToggleIcon
+                className={folderToggleIcon}
+                onClick={toggle}
+              />
+            )}
+          </Group>
+        </Group>
+      </Paper>
+      
+      {/* Properties panel */}
+      <Collapse in={showProperties}>
+        <Box p="xs" style={{ backgroundColor: "rgba(0, 0, 0, 0.03)" }}>
+          <Box>Properties placeholder</Box>
+        </Box>
+      </Collapse>
+      
+      {/* Child content */}
+      <Collapse in={opened && !isEmpty}>
+        <Box pt="0.2em" style={{ opacity: isVisible ? 1 : 0.5, pointerEvents: isVisible ? "auto" : "none" }}>
+          <GuiComponentContext.Provider
+            value={{
+              ...guiContext,
+              folderDepth: guiContext.folderDepth + 1,
+            }}
+          >
+            <guiContext.GuiContainer containerUuid={uuid} />
+          </GuiComponentContext.Provider>
+        </Box>
+      </Collapse>
+      
+      <Collapse in={!(opened && !isEmpty)}>
+        <Box p="xs"></Box>
+      </Collapse>
+    </Paper>
+  );
+}
+
+#_gui_api.py
+
+
+
+
+
+def add_folder_tree(
+        self,
+        label: str,
+        *,
+        order: float | None = None,
+        expand_by_default: bool = True,
+        visible: bool = True,
+        visibility_state: bool = True,
+    ) -> GuiFolderTreeHandle:
+        """Add a hierarchical folder tree with visibility controls, and return a handle that can be used to populate it.
+
+        Args:
+            label: Label to display on the folder tree.
+            order: Optional ordering, smallest values will be displayed first.
+            expand_by_default: Open the folder tree by default. Set to False to collapse it by default.
+            visible: Whether the folder tree component itself is visible.
+            visibility_state: Whether the children of this folder tree should be visible.
+
+        Returns:
+            A handle that can be used as a context to populate the folder tree.
+        """
+        folder_tree_container_id = _make_uuid()
+        order = _apply_default_order(order)
+        props = _messages.GuiFolderTreeProps(
+            order=order,
+            label=label,
+            expand_by_default=expand_by_default,
+            visible=visible,
+            visibility_state=visibility_state,
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiFolderTreeMessage(
+                uuid=folder_tree_container_id,
+                container_uuid=self._get_container_uuid(),
+                props=props,
+            )
+        )
+        return GuiFolderTreeHandle(
+            _GuiHandleState(
+                folder_tree_container_id,
+                self,
+                None,
+                props=props,
+                parent_container_id=self._get_container_uuid(),
+            ),
+        )
