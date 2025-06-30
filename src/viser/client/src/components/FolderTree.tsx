@@ -1,11 +1,11 @@
 import * as React from "react";
 import { useDisclosure } from "@mantine/hooks";
 import { GuiFolderTreeMessage } from "../WebsocketMessages";
-import { IconChevronDown, IconChevronUp, IconEye, IconEyeOff, IconSettings } from "@tabler/icons-react";
-import { Box, Collapse, Paper, ActionIcon, Group } from "@mantine/core";
+import { IconEye, IconEyeOff, IconSettings, IconCaretDown, IconCaretRight } from "@tabler/icons-react";
+import { Box, Collapse} from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
 import { ViewerContext } from "../ViewerContext";
-import { folderLabel, folderToggleIcon, folderWrapper } from "./Folder.css";
+import { useFolderTreeVisibility } from "./FolderTreeManager";
 
 /**
  * Component styles for FolderTree
@@ -33,7 +33,6 @@ export default function FolderTreeComponent({
 }: GuiFolderTreeMessage & { nextGuiUuid: string | null }) {
   const viewer = React.useContext(ViewerContext)!;
   const [opened, { toggle }] = useDisclosure(expand_by_default);
-  const [isVisible, setIsVisible] = React.useState(visibility_state);
   const [showProperties, setShowProperties] = React.useState(false);
   
   const guiIdSet = viewer.useGui(
@@ -45,173 +44,109 @@ export default function FolderTreeComponent({
     nextGuiUuid == null ? null : state.guiConfigFromUuid[nextGuiUuid]?.type,
   );
 
-  const updateChildrenVisibility = React.useCallback((idSet: Record<string, boolean>, newState: boolean) => {
-    Object.keys(idSet).forEach(childId => {
-      const childConfig = viewer.useGui.getState().guiConfigFromUuid[childId];
-      
-      if (!childConfig) return;
-      
-      // Check current props to see what properties are available
-      const currentProps = childConfig.props;
-      
-      // Handle different component types with appropriate properties
-      switch (childConfig.type) {
-        case "GuiFolderTreeMessage": {
-          // For folder trees, update visibility_state
-          guiContext.messageSender({
-            type: "GuiUpdateMessage",
-            uuid: childId,
-            updates: { visibility_state: newState },
-          });
-          
-          // Recursively update nested folder trees
-          const childIdSet = viewer.useGui.getState().guiUuidSetFromContainerUuid[childId];
-          if (childIdSet) {
-            updateChildrenVisibility(childIdSet, newState);
-          }
-          break;
-        }
-        case "GuiFolderMessage":
-        case "GuiTabGroupMessage": {
-          // For container components, update visible property
-          if ('visible' in currentProps) {
-            guiContext.messageSender({
-              type: "GuiUpdateMessage",
-              uuid: childId,
-              updates: { visible: newState },
-            });
-          }
-          break;
-        }
-        case "GuiButtonMessage":
-        case "GuiSliderMessage":
-        case "GuiNumberMessage":
-        case "GuiTextMessage":
-        case "GuiCheckboxMessage":
-        case "GuiDropdownMessage":
-        case "GuiButtonGroupMessage":
-        case "GuiVector2Message":
-        case "GuiVector3Message":
-        case "GuiRgbMessage":
-        case "GuiRgbaMessage":
-        case "GuiMultiSliderMessage":
-        case "GuiUploadButtonMessage": {
-          // For input components that extend GuiBaseProps, they have both visible and disabled
-          if ('disabled' in currentProps) {
-            guiContext.messageSender({
-              type: "GuiUpdateMessage",
-              uuid: childId,
-              updates: { disabled: !newState },
-            });
-          }
-          break;
-        }
-        case "GuiMarkdownMessage":
-        case "GuiHtmlMessage":
-        case "GuiPlotlyMessage":
-        case "GuiImageMessage":
-        case "GuiProgressBarMessage":
-        case "GuiUplotMessage": {
-          // For display components, try visible first
-          if ('visible' in currentProps) {
-            guiContext.messageSender({
-              type: "GuiUpdateMessage",
-              uuid: childId,
-              updates: { visible: newState },
-            });
-          }
-          break;
-        }
-        default: {
-          // For unknown components, try visible first, then disabled
-          if ('visible' in currentProps) {
-            guiContext.messageSender({
-              type: "GuiUpdateMessage",
-              uuid: childId,
-              updates: { visible: newState },
-            });
-          } else if ('disabled' in currentProps) {
-            guiContext.messageSender({
-              type: "GuiUpdateMessage",
-              uuid: childId,
-              updates: { disabled: !newState },
-            });
-          } else {
-            console.warn(`Component ${childId} of type ${childConfig.type} has no visible or disabled property`);
-          }
-          break;
-        }
-      }
-    });
-  }, [guiContext, viewer]);
-
-  const toggleVisibility = React.useCallback(() => {
-    const newVisibilityState = !isVisible;
-    setIsVisible(newVisibilityState);
-    
-    // Update this folder tree's visibility state
-    guiContext.messageSender({
-      type: "GuiUpdateMessage",
-      uuid: uuid,
-      updates: { visibility_state: newVisibilityState },
-    });
-    
-    if (guiIdSet) {
-      updateChildrenVisibility(guiIdSet, newVisibilityState);
-    }
-  }, [isVisible, uuid, guiIdSet, guiContext, updateChildrenVisibility]);
+  // Use the custom hook for visibility management
+  const { isVisible, toggleVisibility } = useFolderTreeVisibility(
+    uuid,
+    visibility_state,
+    guiIdSet
+  );
 
   const toggleProperties = React.useCallback(() => {
     setShowProperties(!showProperties);
   }, [showProperties]);
 
-  const ToggleIcon = opened ? IconChevronUp : IconChevronDown;
   const VisibilityIcon = isVisible ? IconEye : IconEyeOff;
 
   if (!visible) return null;
   
   return (
-    <Paper
-      withBorder
-      className={folderWrapper}
-      mb={nextGuiType === "GuiFolderTreeMessage" ? "md" : undefined}
-    >
-      <Paper className={folderLabel} style={{ cursor: isEmpty ? undefined : "pointer" }}>
-        <Group spacing="xs" style={{ width: "100%" }} position="apart">
-          <Box onClick={toggle} style={{ flexGrow: 1, cursor: "pointer" }}>
-            {label}
-          </Box>
-          
-          <Group spacing="xs">
-            <ActionIcon 
-              size="sm" 
-              style={folderTreeEyeButton}
-              onClick={toggleVisibility}
-              aria-label={isVisible ? "Hide contents" : "Show contents"}
-            >
-              <VisibilityIcon size="1rem" />
-            </ActionIcon>
-            
-            <ActionIcon 
-              size="sm" 
-              style={folderTreePropertiesButton}
-              onClick={toggleProperties}
-              aria-label="Properties"
-            >
-              <IconSettings size="1rem" />
-            </ActionIcon>
-            
-            {!isEmpty && (
-              <ToggleIcon
-                className={folderToggleIcon}
-                style={{
-                  display: isEmpty ? "none" : undefined,
-                }}
-              />
-            )}
-          </Group>
-        </Group>
-      </Paper>
+    <Box mb={nextGuiType === "GuiFolderTreeMessage" ? "md" : undefined}>
+      <Box
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.2em",
+          padding: "0 0.25em",
+          lineHeight: "2em",
+          fontSize: "0.875em",
+          width: "100%",
+          paddingLeft: `${0.25 + (guiContext.folderDepth * 1.2)}em`, // Add indentation based on depth
+        }}
+        sx={(theme) => ({
+          "&:hover": {
+            backgroundColor: theme.colorScheme === 'dark' 
+              ? theme.colors.dark[6] 
+              : theme.colors.gray[1],
+          },
+        })}
+      >
+        {/* Expand/collapse arrow - matches scene tree exactly */}
+        <Box
+          style={{
+            opacity: !isEmpty ? 0.7 : 0.1,
+            cursor: !isEmpty ? "pointer" : "default",
+          }}
+          onClick={!isEmpty ? toggle : undefined}
+        >
+          {opened ? (
+            <IconCaretDown
+              style={{
+                height: "1em",
+                width: "1em",
+                transform: "translateY(0.1em)",
+              }}
+            />
+          ) : (
+            <IconCaretRight
+              style={{
+                height: "1em",
+                width: "1em",
+                transform: "translateY(0.1em)",
+              }}
+            />
+          )}
+        </Box>
+        
+        {/* Visibility eye icon - matches scene tree size and behavior */}
+        <Box style={{ width: "1.5em", height: "1.5em" }}>
+          <VisibilityIcon
+            style={{
+              cursor: "pointer",
+              opacity: isVisible ? 0.85 : 0.25,
+              width: "1.5em",
+              height: "1.5em",
+              display: "block",
+            }}
+            onClick={toggleVisibility}
+          />
+        </Box>
+        
+        {/* Folder name - grows to fill space, clickable for expand/collapse */}
+        <Box 
+          style={{ 
+            flexGrow: 1, 
+            userSelect: "none",
+            cursor: !isEmpty ? "pointer" : "default",
+          }}
+          onClick={!isEmpty ? toggle : undefined}
+        >
+          {label}
+        </Box>
+        
+        {/* Settings button on the far right - matches scene tree styling */}
+        <Box style={{ width: "1.25em", height: "1.25em" }}>
+          <IconSettings
+            style={{
+              cursor: "pointer",
+              width: "1.25em",
+              height: "1.25em",
+              display: "block",
+              opacity: 0.7,
+            }}
+            onClick={toggleProperties}
+          />
+        </Box>
+      </Box>
       
       {/* Properties panel */}
       <Collapse in={showProperties}>
@@ -237,6 +172,6 @@ export default function FolderTreeComponent({
       <Collapse in={!(opened && !isEmpty)}>
         <Box p="xs"></Box>
       </Collapse>
-    </Paper>
+    </Box>
   );
 }

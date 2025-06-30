@@ -14,13 +14,14 @@ def main():
         visibility_state=True
     )
     
-    print("✅ FolderTree created successfully!")
-    print("Server running at: http://localhost:8080")
-    print("Check if the FolderTree appears in the GUI panel...")
-    
     with folder_tree:
-        button = server.gui.add_button("Test Button")
-        print("✅ Added button inside FolderTree")
+        with server.gui.add_folder_tree(
+            label="Subfolder 1",
+            expand_by_default=True,
+            visible=True,
+            visibility_state=True
+        ):
+            button = server.gui.add_button("Test Button")
     
     try:
         while True:

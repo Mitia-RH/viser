@@ -660,19 +660,47 @@ class GuiFolderHandle(_GuiHandle, GuiFolderProps):
         gui_api._container_handle_from_uuid.pop(self._impl.uuid)
 
 
+class _FolderTreeChildren(dict[str, SupportsRemoveProtocol]):
+    """Custom dict for FolderTree children that syncs properties to handle_state."""
+    
+    def __init__(self, folder_tree_handle) -> None:
+        super().__init__()
+        self.folder_tree_handle = folder_tree_handle
+    
+    def __setitem__(self, key: str, child: SupportsRemoveProtocol) -> None:
+        """Override __setitem__ to sync child properties when added."""
+        super().__setitem__(key, child)
+        
+        # If this is a GUI handle with props, sync visible and disabled to handle_state
+        if hasattr(child, '_impl'):
+            child_impl = getattr(child, '_impl')
+            if hasattr(child_impl, 'props'):
+                child_props = getattr(child_impl, 'props')
+                if hasattr(child_props, 'visible'):
+                    setattr(child_impl, 'visible', child_props.visible)
+                if hasattr(child_props, 'disabled'):
+                    setattr(child_impl, 'disabled', child_props.disabled)
+
+
 class GuiFolderTreeHandle(_GuiInputHandle[bool], GuiFolderTreeProps):
     """Use as a context to place GUI elements into a hierarchical folder tree with visibility controls."""
 
     def __init__(self, _impl: _GuiHandleState[bool]) -> None:
         super().__init__(_impl=_impl)
+        
+        # Ensure all props are accessible directly on handle_state for GUI updates
+        # This is needed because the GUI update handler checks hasattr(handle_state, prop_name)
+        for prop_name in ["order", "label", "visible", "expand_by_default", "visibility_state"]:
+            if hasattr(self._impl.props, prop_name):
+                prop_value = getattr(self._impl.props, prop_name)
+                setattr(self._impl, prop_name, prop_value)
+
+        # Create a custom _children dict that ensures child properties are synced
+        self._children = _FolderTreeChildren(self)
+        
+        # Register this folder tree as a container
         self._impl.gui_api._container_handle_from_uuid[self._impl.uuid] = self
-
-        # Get the visibility state from props, or default to True
-        visibility_state = getattr(self._impl.props, "visibility_state", True)
-        # Ensure the visibility_state is set in props
-        setattr(self._impl.props, "visibility_state", visibility_state)
-
-        self._children = {}
+        
         parent = self._impl.gui_api._container_handle_from_uuid[
             self._impl.parent_container_id
         ]
