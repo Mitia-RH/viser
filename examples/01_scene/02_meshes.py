@@ -44,9 +44,8 @@ def main():
     print(f"Loaded mesh with {vertices.shape} vertices, {faces.shape} faces")
 
     server = viser.ViserServer()
-    server.scene.add_transform_controls("/handle")
     server.scene.add_mesh_simple(
-        "/handle/simple",
+        "/simple",
         vertices=vertices,
         faces=faces,
         wxyz=tf.SO3.from_x_radians(np.pi / 2).wxyz,
