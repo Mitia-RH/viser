@@ -10,6 +10,7 @@ blend into the fog color, giving a sense of depth.
 import time
 
 import numpy as np
+
 import viser
 
 
