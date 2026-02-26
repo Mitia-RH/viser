@@ -130,87 +130,85 @@ const _plane = new THREE.Plane();
 const _upVector = new THREE.Vector3(0, 1, 0);
 const _zeroVector = new THREE.Vector3(0, 0, 0);
 
-export const Grid = React.forwardRef<THREE.Mesh, GridProps>(
-  (
-    {
-      args,
-      cellColor = "#000000",
-      sectionColor = "#2080ff",
-      cellSize = 0.5,
-      sectionSize = 1,
-      followCamera = false,
-      infiniteGrid = false,
-      fadeDistance = 100,
-      fadeStrength = 1,
-      fadeFrom = 1,
-      cellThickness = 0.5,
-      sectionThickness = 1,
-      side = THREE.BackSide,
-      ...props
-    },
-    fRef,
-  ) => {
-    const ref = React.useRef<THREE.Mesh>(null);
-    React.useImperativeHandle(fRef, () => ref.current!, []);
-
-    const material = React.useMemo(() => {
-      return new GridMaterial({
-        transparent: true,
-        side,
-        fog: true,
-      } as any);
-    }, []);
-
-    // Update material uniforms when props change.
-    React.useEffect(() => {
-      material.uniforms.cellSize.value = cellSize;
-      material.uniforms.sectionSize.value = sectionSize;
-      material.uniforms.cellColor.value.set(cellColor);
-      material.uniforms.sectionColor.value.set(sectionColor);
-      material.uniforms.cellThickness.value = cellThickness;
-      material.uniforms.sectionThickness.value = sectionThickness;
-      material.uniforms.fadeDistance.value = fadeDistance;
-      material.uniforms.fadeStrength.value = fadeStrength;
-      material.uniforms.fadeFrom.value = fadeFrom;
-      material.uniforms.infiniteGrid.value = infiniteGrid;
-      material.uniforms.followCamera.value = followCamera;
-      material.side = side;
-      material.needsUpdate = true;
-    }, [
-      material,
-      cellSize,
-      sectionSize,
-      cellColor,
-      sectionColor,
-      cellThickness,
-      sectionThickness,
-      fadeDistance,
-      fadeStrength,
-      fadeFrom,
-      infiniteGrid,
-      followCamera,
-      side,
-    ]);
-
-    useFrame((state) => {
-      const mesh = ref.current;
-      if (!mesh) return;
-      _plane
-        .setFromNormalAndCoplanarPoint(_upVector, _zeroVector)
-        .applyMatrix4(mesh.matrixWorld);
-      _plane.projectPoint(
-        state.camera.position,
-        material.uniforms.worldCamProjPosition.value,
-      );
-      material.uniforms.worldPlanePosition.value
-        .set(0, 0, 0)
-        .applyMatrix4(mesh.matrixWorld);
-    });
-
-    return (
-      <mesh ref={ref} frustumCulled={false} material={material} {...props}>
-        <planeGeometry args={args} />
-      </mesh>
-    );
+export const Grid = React.forwardRef<THREE.Mesh, GridProps>(function Grid(
+  {
+    args,
+    cellColor = "#000000",
+    sectionColor = "#2080ff",
+    cellSize = 0.5,
+    sectionSize = 1,
+    followCamera = false,
+    infiniteGrid = false,
+    fadeDistance = 100,
+    fadeStrength = 1,
+    fadeFrom = 1,
+    cellThickness = 0.5,
+    sectionThickness = 1,
+    side = THREE.BackSide,
+    ...props
   },
-);
+  fRef,
+) {
+  const ref = React.useRef<THREE.Mesh>(null);
+  React.useImperativeHandle(fRef, () => ref.current!, []);
+
+  const material = React.useMemo(() => {
+    return new GridMaterial({
+      transparent: true,
+      side,
+      fog: true,
+    } as any);
+  }, []);
+
+  // Update material uniforms when props change.
+  React.useEffect(() => {
+    material.uniforms.cellSize.value = cellSize;
+    material.uniforms.sectionSize.value = sectionSize;
+    material.uniforms.cellColor.value.set(cellColor);
+    material.uniforms.sectionColor.value.set(sectionColor);
+    material.uniforms.cellThickness.value = cellThickness;
+    material.uniforms.sectionThickness.value = sectionThickness;
+    material.uniforms.fadeDistance.value = fadeDistance;
+    material.uniforms.fadeStrength.value = fadeStrength;
+    material.uniforms.fadeFrom.value = fadeFrom;
+    material.uniforms.infiniteGrid.value = infiniteGrid;
+    material.uniforms.followCamera.value = followCamera;
+    material.side = side;
+    material.needsUpdate = true;
+  }, [
+    material,
+    cellSize,
+    sectionSize,
+    cellColor,
+    sectionColor,
+    cellThickness,
+    sectionThickness,
+    fadeDistance,
+    fadeStrength,
+    fadeFrom,
+    infiniteGrid,
+    followCamera,
+    side,
+  ]);
+
+  useFrame((state) => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    _plane
+      .setFromNormalAndCoplanarPoint(_upVector, _zeroVector)
+      .applyMatrix4(mesh.matrixWorld);
+    _plane.projectPoint(
+      state.camera.position,
+      material.uniforms.worldCamProjPosition.value,
+    );
+    material.uniforms.worldPlanePosition.value
+      .set(0, 0, 0)
+      .applyMatrix4(mesh.matrixWorld);
+  });
+
+  return (
+    <mesh ref={ref} frustumCulled={false} material={material} {...props}>
+      <planeGeometry args={args} />
+    </mesh>
+  );
+});
