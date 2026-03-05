@@ -52,7 +52,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       );
       const [lineMaterial] = React.useState(() => {
         const material = new LineMaterial();
-        (material as unknown as { fog: boolean }).fog = true;
+        material.fog = true;
         return material;
       });
       const itemSize = 3; // We're now always using RGB colors (3 components)
